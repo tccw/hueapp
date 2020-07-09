@@ -1,5 +1,6 @@
 import os
 import sys
+import dotenv
 from math import asin, sin, cos, sqrt, radians
 from time import sleep
 
@@ -11,6 +12,8 @@ from datetime import datetime, timedelta
 from google.transit import gtfs_realtime_pb2
 from phue import Bridge
 from scene_scripts.helpers import load_file
+
+dotenv.load_dotenv(dotenv.find_dotenv())
 
 """
 Route and arrival data used in this product or service is provided by permission of TransLink. 
@@ -103,13 +106,13 @@ def haversine_dist(lat1, lon1, lat2, lon2):
 
 
 # Constants
-file = "/scene_scripts/data/my_location.txt"
-path = os.getcwd() + file
-data = load_file(path)
-lat_me = float(data[0])
-lon_me = float(data[1])
-API_KEY = data[2]
-bridge_ip = data[3]
+#file = "/scene_scripts/data/my_location.txt"
+#path = os.getcwd() + file
+#data = load_file(path)
+lat_me = float(os.getenv('MYLAT'))
+lon_me = float(os.getenv('MYLON'))
+API_KEY = os.getenv('API_KEY')
+bridge_ip = os.getenv('BRIDGE_IP')
 westbound = 1
 eastbound = 0
 lights_flag = False
