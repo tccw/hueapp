@@ -1,0 +1,1 @@
+A small flask webapp running on a Raspberry Pi which enables custom hue-lights requests through Alexa via IFTTT and WebHooks.
