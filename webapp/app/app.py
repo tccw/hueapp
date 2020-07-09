@@ -3,9 +3,15 @@
 from datetime import datetime
 from flask import Flask, render_template, request
 import sys
+import os
+import dotenv
+from scene_scripts import auroraBorealis
 
-buswatch = "BUSWATCH-b72f6d14-69f1-408c-b2a1-c25c50bdd1d5"
-aurora = "AURORA-fd2b5e7a-7c1a-4feb-a1e5-c45adb7b1723"
+dotenv.load_dotenv(dotenv.find_dotenv())
+
+buswatch = os.getenv('BUSWATCH_CODE')
+aurora = os.getenv('AURORA_CODE')
+
 empty_response = ('', 204)
 app = Flask(__name__)
 
@@ -32,15 +38,11 @@ def start_bus_watch():
             return str(e) + sys.version + "Path to python: " + sys.executable 
         return "buswatch"
     elif message == aurora:
-        # import and immediately run auroraBorealis.py
-        console_logger(message.lower())
         try:
-            from scene_scripts import auroraBorealis
-            return "ran and terminated"
-            #exec(open("./scene_scripts/auroraBorealis.py").read())
+            auroraBorealis.aurora(2)
+            return ("ran and terminated", 200)
         except Exception as e:
             return str(e) + sys.version + "Path to python: " + str(sys.path)
-        return "aurora" 
     return empty_response
 
 def console_logger(module):
