@@ -53,6 +53,13 @@ def ifttt_trigger():
             return str(e) + sys.version + "Path to python: " + str(sys.path)
     return no_such_cmd_response
 
+# @celery.task allows celery to run this asynchronously
+# requires a celery worker which can be started by navigating to hueapp/webapp/app 
+# and running celery -A app.celery worker
+# redis server must also be running which can be started with sudo /etc/init.d/redis_$PORT start
+# flask.palletsprojects.com/en/1.1.x/patterns/celery
+# redis.io/topics/quickstart
+# TODO make sure that $REDIS_PORT is firewalled from the external net
 @celery.task
 def aurora_run(seconds):
     auroraBorealis.aurora(seconds)
