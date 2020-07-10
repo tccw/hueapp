@@ -6,6 +6,7 @@ import sys
 import os
 import dotenv
 from scene_scripts import auroraBorealis
+import tasks
 
 dotenv.load_dotenv(dotenv.find_dotenv())
 
@@ -13,7 +14,15 @@ buswatch = os.getenv('BUSWATCH_CODE')
 aurora = os.getenv('AURORA_CODE')
 
 empty_response = ('', 204)
+compl_response = ('Completed', 200)
+inprog_response = ('Task in progress', 202)
+no_such_cmd_response = ('No such command', 400)
 app = Flask(__name__)
+app.config.update(
+        CELERY_BROKER_URL=os.getenv('BROKER_URL'),
+        CELERY_RESULT_BACKEND=os.getenv('RESULT_BACKEND')
+        )
+celery = tasks.make_celery(app)
 
 
 @app.route("/")
@@ -23,7 +32,7 @@ def index():
 
 # ifttt trigger logic
 @app.route("/ifttt-trigger", methods=['GET', 'POST'])
-def start_bus_watch():
+def ifttt_trigger():
     if request.content_length is None:
         return empty_response
     elif request.content_length < 1e4:
@@ -31,23 +40,23 @@ def start_bus_watch():
 
     if message == buswatch:
         # import and immediately run busIndicator.py
-        console_logger(message.lower())
         try:
             from scene_scripts import busIndicator
+            return inprog_response
         except Exception as e:
             return str(e) + sys.version + "Path to python: " + sys.executable 
-        return "buswatch"
     elif message == aurora:
         try:
-            auroraBorealis.aurora(2)
-            return ("ran and terminated", 200)
+            aurora_run.delay(10) # asyc call managed with celery and redis 
+            return inprog_response
         except Exception as e:
             return str(e) + sys.version + "Path to python: " + str(sys.path)
-    return empty_response
+    return no_such_cmd_response
 
-def console_logger(module):
-    print("Log {}: running {}".format(datetime.now(), module))
+@celery.task
+def aurora_run(seconds):
+    auroraBorealis.aurora(seconds)
 
 
 if __name__ == '__main__':
-    app.run(debug=False, host='0.0.0.0', port=8080)
+    app.run(debug=False, host='0.0.0.0', port=os.getenv('FLASK_PORT'))
