@@ -24,7 +24,6 @@ app.config.update(
         )
 celery = tasks.make_celery(app)
 
-
 @app.route("/")
 def index():
     return render_template('index.html')
@@ -41,13 +40,14 @@ def ifttt_trigger():
     if message == buswatch:
         # import and immediately run busIndicator.py
         try:
-            from scene_scripts import busIndicator
+            #from scene_scripts import busIndicator
+            sys.stdout.write("Ya triggered me!")
             return inprog_response
         except Exception as e:
             return str(e) + sys.version + "Path to python: " + sys.executable 
     elif message == aurora:
         try:
-            aurora_run.delay(10) # asyc call managed with celery and redis 
+            aurora_run.delay(500) # asyc call managed with celery and redis 
             return inprog_response
         except Exception as e:
             return str(e) + sys.version + "Path to python: " + str(sys.path)

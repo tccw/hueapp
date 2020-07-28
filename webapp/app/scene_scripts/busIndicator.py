@@ -11,7 +11,6 @@ import urllib.response
 from datetime import datetime, timedelta
 from google.transit import gtfs_realtime_pb2
 from phue import Bridge
-from scene_scripts.helpers import load_file
 
 dotenv.load_dotenv(dotenv.find_dotenv())
 
@@ -106,9 +105,6 @@ def haversine_dist(lat1, lon1, lat2, lon2):
 
 
 # Constants
-#file = "/scene_scripts/data/my_location.txt"
-#path = os.getcwd() + file
-#data = load_file(path)
 lat_me = float(os.getenv('MYLAT'))
 lon_me = float(os.getenv('MYLON'))
 API_KEY = os.getenv('API_KEY')
