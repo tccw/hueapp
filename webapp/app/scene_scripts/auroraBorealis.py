@@ -9,9 +9,7 @@ import dotenv
 
 # constants
 dotenv.load_dotenv(dotenv.find_dotenv())
-bridge_ip = os.getenv('BRIDGE_IP')
 b = Bridge(os.getenv('BRIDGE_IP'))  # your bridge IP here
-print(bridge_ip)
 b.connect()
 
 lr_lamp = [1, 4]
