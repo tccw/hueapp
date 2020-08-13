@@ -2,9 +2,11 @@
 
 from datetime import datetime
 from flask import Flask, render_template, request
+from celery.contrib.abortable import AbortableTask 
 import sys
 import os
 import dotenv
+from scene_scripts import Bedtime
 from scene_scripts import auroraBorealis
 import tasks
 
@@ -12,6 +14,7 @@ dotenv.load_dotenv(dotenv.find_dotenv())
 
 buswatch = os.getenv('BUSWATCH_CODE')
 aurora = os.getenv('AURORA_CODE')
+bedtime = os.getenv('BEDTIME')
 
 empty_response = ('', 204)
 compl_response = ('Completed', 200)
@@ -44,14 +47,22 @@ def ifttt_trigger():
             sys.stdout.write("Ya triggered me!")
             return inprog_response
         except Exception as e:
-            return str(e) + sys.version + "Path to python: " + sys.executable 
+            return error_helper(e) 
     elif message == aurora:
         try:
             aurora_run.delay(500) # asyc call managed with celery and redis 
             return inprog_response
         except Exception as e:
-            return str(e) + sys.version + "Path to python: " + str(sys.path)
+            return error_helper(e)
+    elif message == bedtime:
+        try:
+            bedtime_run(0.3)
+        except Exception as e:
+            return error_helper(e)
     return no_such_cmd_response
+
+def error_helper(e):
+    return str(e) + sys.version + "Path to python: " + str(sys.path)
 
 # @celery.task allows celery to run this asynchronously
 # requires a celery worker which can be started by navigating to hueapp/webapp/app 
@@ -61,8 +72,12 @@ def ifttt_trigger():
 # redis.io/topics/quickstart
 # TODO make sure that $REDIS_PORT is firewalled from the external net
 @celery.task
-def aurora_run(seconds):
+def aurora_run(seconds: int) -> None:
     auroraBorealis.aurora(seconds)
+
+@celery.task
+def bedtime_run(p: int) -> None:
+    Bedtime.bedtime(p)
 
 
 if __name__ == '__main__':
