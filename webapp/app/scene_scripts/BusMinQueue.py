@@ -19,7 +19,7 @@ class BusMinQueue:
     def empty(self) -> bool:
         return len(self._data) == 0
 
-    def size(self) -> int:
+    def __len__(self):
         return len(self._data)
 
     # REQUIRES: the bus exists within the MinQueue
@@ -42,7 +42,7 @@ class BusMinQueue:
     # EFFECTS: Find and remove
     def remove(self, bus: Bus) -> None:
         result = list(filter(lambda x: x[1] == bus, self._data)) # returns the tuple with the matching bus
-        if result is not None:
+        if len(result) > 0:
             self._data.remove(result[0])
             heapq.heapify(self._data)
 

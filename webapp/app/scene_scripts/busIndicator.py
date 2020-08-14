@@ -1,6 +1,5 @@
 from scene_scripts.Bus import Bus
 from scene_scripts.BusMinQueue import BusMinQueue
-
 import os
 import time
 import dotenv
@@ -47,7 +46,8 @@ def run_buswatch(route_id: str, direction: str, runtime_sec: int, freq_sec: int)
     while keep_running:
         feed = gtfs_realtime_pb2.FeedMessage()
         # print('https://gtfs.translink.ca/v2/gtfsposition?apikey=' + API_KEY)
-        response = urllib.request.urlopen('https://gtfs.translink.ca/v2/gtfsposition?apikey=' + API_KEY)
+        response = urllib.request.urlopen('https://gtfs.translink.ca/v2/gtfsposition?apikey=uABcg4iGeShO2zbYQmWf')
+        # response = urllib.request.urlopen('https://gtfs.translink.ca/v2/gtfsposition?apikey=' + API_KEY)
         feed.ParseFromString(response.read())
 
         for entity in feed.entity:
@@ -71,7 +71,7 @@ def run_buswatch(route_id: str, direction: str, runtime_sec: int, freq_sec: int)
                     b[1].add_gps_point(lat, lon, bus_time)
                     bus_pq.update_dist(b[1].predicted_distance(lat_me, lon_me), b)
 
-                if not bus_not_passed(lat, lon, direction):
+                if len(bus_pq) > 0 and bus_not_passed(lat, lon, direction):
                     bus_pq.remove(bus)
 
         traffic_light_indicator(bus_pq, direction)
@@ -81,7 +81,7 @@ def run_buswatch(route_id: str, direction: str, runtime_sec: int, freq_sec: int)
 
 # EFFECTS: Encapsulates the logic for changing the lights
 def traffic_light_indicator(buses: {}, direction: str) -> None:
-    if buses.peek_min()[0] < 1000:
+    if len(buses) > 0 and buses.peek_min()[0] < 1000 and buses.peek_min > 300:
         # green light
         bridge.set_light(lr_lamp, 'xy', [0.2206, 0.662])
     else:
@@ -104,5 +104,5 @@ def bus_not_passed(lat: float, lon: float, direction: str) -> bool:
 
 bus_14_id = '16718'
 bus_99_id = '6641'
-run_buswatch(bus_14_id, 'westbound', 500, 40)
+run_buswatch(bus_14_id, 'eastbound', 1000, 40)
 

@@ -1,5 +1,5 @@
 from .helpers import haversine_dist
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import deque
 
 """
