@@ -1,2 +1,7 @@
 webapp/app/scene_scripts/data*
 !webapp/app/scene_scripts/data/your_data_here.txt
+webapp/.env
+webapp/app/.env
+webapp/app/.env.swp
+webapp/app/.python_hue
+webapp/uwsgi.ini

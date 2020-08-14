@@ -1,193 +1,108 @@
+from scene_scripts.Bus import Bus
+from scene_scripts.BusMinQueue import BusMinQueue
 import os
-import sys
-from math import asin, sin, cos, sqrt, radians
-from time import sleep
-
+import time
+import dotenv
 import urllib.request
 import urllib.response
-#import osrm
-
-from datetime import datetime, timedelta
+from datetime import datetime
 from google.transit import gtfs_realtime_pb2
 from phue import Bridge
-from scene_scripts.helpers import load_file
+
+dotenv.load_dotenv(dotenv.find_dotenv())
+# constants
+lat_me = float(os.getenv('MYLAT'))
+lon_me = float(os.getenv('MYLON'))
+API_KEY = os.getenv('API_KEY')
+bridge_ip = os.getenv('BRIDGE_IP')
+
+# connect to the bridge
+bridge = Bridge(bridge_ip)
+bridge.connect()
+# create a light grouping and turn them on
+lr_lamp = [1, 4]
+command = {'on': True, 'bri': 127}
+bridge.set_light(lr_lamp, command)
 
 """
-Route and arrival data used in this product or service is provided by permission of TransLink. 
-TransLink assumes no responsibility for the accuracy or currency of the Data used in this product or service.
+EFFECTS: pulls realtime transit data from TransLink and estimates the distance from
+the users location. Changes the colors on Philips Hue lights using traffic light logic
+when buses are approaching. 
 """
 
 
-# Class definition
-class Bus:
+def run_buswatch(route_id: str, direction: str, runtime_sec: int, freq_sec: int) -> None:
+    if (runtime_sec / freq_sec) > 1000:
+        print("Flashy lights bb")
+        return
+    # blink the lights to indicate we would exceed the 1000 requests per day limit
+    keep_running = runtime_sec // freq_sec  # // is int division in Python
+    if direction.lower() == 'westbound' or 'northbound':
+        d = 1
+    else:
+        d = 0
 
-    def __init__(self, vehicle_id, route_id):
-        self.gps_points = []
-        self.vehicle_id = vehicle_id
-        self.route_id = route_id
-        # self.dist_from_me = dist_from_me
+    bus_pq = BusMinQueue()
+    while keep_running:
+        feed = gtfs_realtime_pb2.FeedMessage()
+        # print('https://gtfs.translink.ca/v2/gtfsposition?apikey=' + API_KEY)
+        response = urllib.request.urlopen('https://gtfs.translink.ca/v2/gtfsposition?apikey=uABcg4iGeShO2zbYQmWf')
+        # response = urllib.request.urlopen('https://gtfs.translink.ca/v2/gtfsposition?apikey=' + API_KEY)
+        feed.ParseFromString(response.read())
 
-    # TODO: store the last two unique GPS points and calculate the speed of the bus to forward prop the position
-    #       Use the timestamp field to determine if the GPS point is unique.
-    # EFFECTS: adds a GPS point (lat, lon, gps_time, seconds since last check-in) to the array gps_points
-    def add_gps_point(self, gps_point):
-        if gps_point not in self.gps_points:
-            self.gps_points.append(gps_point)
-            print("ADDED GPS POINT: to " + self.vehicle_id)
+        for entity in feed.entity:
+            if (entity.HasField('vehicle') and
+                    entity.vehicle.trip.route_id == route_id and
+                    entity.vehicle.trip.direction_id == d):
+                lat = entity.vehicle.position.latitude
+                lon = entity.vehicle.position.longitude
+                vehicle_id = entity.vehicle.vehicle.id
+                bus_time = datetime.fromtimestamp(int(entity.vehicle.timestamp))
 
-    # REQUIRES: a list of valid latitude, longitude, and time tuples. The list should be of length three.
-    # EFFECTS: Calculates the naive average speed given the last three unique GPS positions and their times
-    def gps_bus_speed(self):
-        # data [(lat, lon, datetime), (lat, lon, datetime), (lat, lon, gps_time, seconds since last check-in)]
-        dist_list = []
-        time = []
-        for g in self.gps_points:
-            dist_list.append(haversine_dist(g.lat, g.lon, lat_me, lon_me))
-            time.append(g.gps_time)
+                bus = Bus(vehicle_id, route_id)
+                b = bus_pq.find(bus)  # set b to the bus
+                # TODO: if a bus hasn't been updated in over 5 minutes drop it from the list / don't add it. Something
+                #       to account for when buses stop running but the bus stays in the bus list. Maybe if a bus that is
+                #       in the list is no longer appearing in the GTFS data then drop it
+                if b is None and bus_not_passed(lat, lon, direction):
+                    bus.add_gps_point(lat, lon, bus_time)
+                    bus_pq.push((bus.predicted_distance(lat_me, lon_me), bus))
+                elif bus_not_passed(lat, lon, direction):
+                    b[1].add_gps_point(lat, lon, bus_time)
+                    bus_pq.update_dist(b[1].predicted_distance(lat_me, lon_me), b)
 
-        # TODO: Test this nonsense. Fix so that only unique GPS points get added. Have sanity checks for speeds
-        dist_diff_list = [dist_list[i + 1] - dist_list[i] for i in range(len(dist_list) - 1)]
-        time_diff_list = [time[i + 1] - time[i] for i in range(len(time) - 1)]
-        time_diff_list = [dt.total_seconds() for dt in time_diff_list]
+                if len(bus_pq) > 0 and bus_not_passed(lat, lon, direction):
+                    bus_pq.remove(bus)
 
-        # mean speed in m/s
-        return sum(dist_diff_list) / sum(time_diff_list)
-
-    # EFFECTS: override equals
-    def __eq__(self, other):
-        return self.vehicle_id == other.vehicle_id
-
-
-class GpsPoint:
-    """
-    Parameters
-    -------------
-    lat : double
-    lon : double
-    gps_time : datetime
-    """
-
-    def __init__(self, lat, lon, gps_time):
-        self.lat = lat
-        self.lon = lon
-        self.gps_time = gps_time
-
-    # EFFECTS: override equals
-    def __eq__(self, other):
-        return (self.lat == other.lat) & (self.lon == other.lon)
+        traffic_light_indicator(bus_pq, direction)
+        keep_running -= 1
+        time.sleep(freq_sec)
 
 
-# Function definitions
-# TODO: check initial Earth radius estimate. Differences are too high between this function and more precise
-#       iterative solutions.
-def haversine_dist(lat1, lon1, lat2, lon2):
-    """
-    http://www.faqs.org/faqs/geography/infosystems-faq/
-    Haversine Formula (from R.W. Sinnott, "Virtues of the Haversine",
-     Sky and Telescope, vol. 68, no. 2, 1984, p. 159)
-    """
-    phi_1 = radians(lat1)
-    phi_2 = radians(lat2)
-    lambda_1 = radians(lon1)
-    lambda_2 = radians(lon2)
-
-    r = 6378 - 21 * sin(phi_2)  # Radius of the Earth crude latitude adjustment (in km)
-
-    term_1 = (sin((phi_2 - phi_1) / 2)) ** 2
-    term_2 = cos(lat1) * cos(phi_2) * (sin((lambda_2 - lambda_1) / 2)) ** 2
-    hav_term = 2 * asin(sqrt(term_1 + term_2))  # distance in radians
-
-    distance_km = r * hav_term
-    distance_m = round(distance_km * 1000, 0)
-    return distance_m
+# EFFECTS: Encapsulates the logic for changing the lights
+def traffic_light_indicator(buses: {}, direction: str) -> None:
+    if len(buses) > 0 and buses.peek_min()[0] < 1000 and buses.peek_min > 300:
+        # green light
+        bridge.set_light(lr_lamp, 'xy', [0.2206, 0.662])
+    else:
+        # red light
+        bridge.set_light(lr_lamp, 'xy', [0.6679, 0.2969])
 
 
-# Constants
-file = "/scene_scripts/data/my_location.txt"
-path = os.getcwd() + file
-data = load_file(path)
-lat_me = float(data[0])
-lon_me = float(data[1])
-API_KEY = data[2]
-bridge_ip = data[3]
-westbound = 1
-eastbound = 0
-lights_flag = False
+# EFFECTS: Helper function to determine if
+def bus_not_passed(lat: float, lon: float, direction: str) -> bool:
+    if direction == 'westbound':
+        result: bool = abs(lon) < abs(lon_me)
+    elif direction == 'eastbound':
+        result: bool = abs(lon) > abs(lon_me)
+    elif direction == 'northbound':
+        result: bool = abs(lat) < abs(lat_me)
+    else:
+        result: bool = abs(lat) > abs(lat_me)
+    return result
 
-if lights_flag:
-    # connect to the bridge
-    b = Bridge(bridge_ip)
-    b.connect()
-    # create a light grouping and turn them on
-    lr_lamp = [1]
-    command = {'on': True, 'bri': 127}
-    b.set_light(lr_lamp, command)
-    # print(b.get_api())
 
-bus_list = []
-for n in range(500):
-    feed = gtfs_realtime_pb2.FeedMessage()
-    response = urllib.request.urlopen('https://gtfs.translink.ca/v2/gtfsposition?apikey=' + API_KEY)
-    feed.ParseFromString(response.read())
-    green_dist = []
-    red_dist = []
+bus_14_id = '16718'
+bus_99_id = '6641'
+run_buswatch(bus_14_id, 'eastbound', 1000, 40)
 
-    for entity in feed.entity:
-        if (entity.HasField('vehicle') and
-                (entity.vehicle.trip.route_id == "16718") and
-                (entity.vehicle.trip.direction_id == westbound)):
-            # print(entity)
-
-            lat_1 = entity.vehicle.position.latitude
-            lon_1 = entity.vehicle.position.longitude
-
-            busID = entity.vehicle.vehicle.id
-            now = datetime.now()
-            bus_checkin_time = datetime.fromtimestamp(int(entity.vehicle.timestamp))
-            time_diff = now - bus_checkin_time
-
-            bus = Bus(busID, entity.vehicle.trip.route_id)
-            if not bus_list:
-                bus_list.append(bus)
-                bus.add_gps_point(GpsPoint(lat_1, lon_1, bus_checkin_time))
-            elif bus in bus_list:
-                for b in bus_list:
-                    if bus == b:
-                        b.add_gps_point(GpsPoint(lat_1, lon_1, bus_checkin_time))
-                        break
-            else:
-                bus_list.append(bus)
-                bus.add_gps_point(GpsPoint(lat_1, lon_1, bus_checkin_time))
-
-            dist_meters = haversine_dist(lat_1, lon_1, lat_me, lon_me)
-            # TODO: set light color logic using traffic light system.
-            # TODO: incorporate RTTI as GPS data might not be frequent enough to be reliable at this scale of prediction
-            if ((lon_1 > lon_me) and
-                    (dist_meters < 1300) and
-                    (dist_meters > 500) and
-                    (time_diff < timedelta(seconds=90))):
-                green_dist.append(dist_meters)
-            # print("A westbound 14 is close! Leave now!")
-            if lon_1 > lon_me:
-                print(
-                    f'The 14 bus with ID {busID} is {dist_meters} meters away.\n'
-                    f'GPS-data received {round(time_diff.total_seconds(), 0)} seconds ago.\n'
-                )
-            for b in bus_list:
-                if len(b.gps_points) >= 3:
-                    print(
-                        f'The average speed of {b.vehicle_id} is {round(b.gps_bus_speed() * 3.6, 0)} km/r'
-                    )
-
-    print('------------------------------------------------------------------------')
-    if lights_flag:
-        if not len(green_dist):
-            b.set_light(lr_lamp, 'xy', [0.6679, 0.2969])
-            print('turn red')
-        else:
-            b.set_light(lr_lamp, 'xy', [0.2206, 0.662])
-            print('turn green')
-
-            print('------------------------------------------------------------------------')
-
-    sleep(20)
