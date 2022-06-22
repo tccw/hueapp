@@ -13,7 +13,7 @@ itsdangerous==1.1.0
 Jinja2==2.11.2
 kombu==4.6.11
 MarkupSafe==1.1.1
-numpy==1.19.0
+numpy==1.22.0
 phue==1.1
 protobuf==3.12.2
 pytz==2020.1
