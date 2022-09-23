@@ -15,7 +15,7 @@ kombu==4.6.11
 MarkupSafe==1.1.1
 numpy==1.19.0
 phue==1.1
-protobuf==3.12.2
+protobuf==3.18.3
 pytz==2020.1
 requests==2.24.0
 six==1.15.0
